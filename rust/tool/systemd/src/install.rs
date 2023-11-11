@@ -36,6 +36,7 @@ pub struct Installer {
     esp_paths: SystemdEspPaths,
     generation_links: Vec<PathBuf>,
     arch: Architecture,
+    boot_counters: usize,
 }
 
 impl Installer {
@@ -49,6 +50,7 @@ impl Installer {
         configuration_limit: usize,
         esp: PathBuf,
         generation_links: Vec<PathBuf>,
+        boot_counters: usize,
     ) -> Self {
         let mut gc_roots = Roots::new();
         let esp_paths = SystemdEspPaths::new(esp, arch);
@@ -65,6 +67,7 @@ impl Installer {
             esp_paths,
             generation_links,
             arch,
+            boot_counters,
         }
     }
 
@@ -252,7 +255,7 @@ impl Installer {
         let stub_target = self
             .esp_paths
             .linux
-            .join(stub_name(generation, &self.key_pair.public_key)?);
+            .join(stub_name(generation, &self.key_pair.public_key, self.boot_counters)?);
         self.gc_roots.extend([&stub_target]);
         install_signed(&self.key_pair, &lanzaboote_image, &stub_target)
             .context("Failed to install the Lanzaboote stub.")?;
@@ -267,7 +270,7 @@ impl Installer {
         let stub_target = self
             .esp_paths
             .linux
-            .join(stub_name(generation, &self.key_pair.public_key)?);
+            .join(stub_name(generation, &self.key_pair.public_key, self.boot_counters)?);
         let stub = fs::read(&stub_target)?;
         let kernel_path = resolve_efi_path(
             &self.esp_paths.esp,
@@ -293,10 +296,12 @@ impl Installer {
     /// The full path to the target file is returned.
     fn install_nixos_ca(&mut self, from: &Path, label: &str) -> Result<PathBuf> {
         let hash = file_hash(from).context("Failed to read the source file.")?;
+        let count = if (self.boot_counters > 0) { format!("+{}", self.boot_counters) } else { "".to_string() };
         let to = self.esp_paths.nixos.join(format!(
-            "{}-{}.efi",
+            "{}-{}{}.efi",
             label,
-            Base32Unpadded::encode_string(&hash)
+            Base32Unpadded::encode_string(&hash),
+            count
         ));
         self.gc_roots.extend([&to]);
         install(from, &to)?;
@@ -361,7 +366,7 @@ fn resolve_efi_path(esp: &Path, efi_path: &[u8]) -> Result<PathBuf> {
 /// Compute the file name to be used for the stub of a certain generation, signed with the given key.
 ///
 /// The generated name is input-addressed by the toplevel corresponding to the generation and the public part of the signing key.
-fn stub_name(generation: &Generation, public_key: &Path) -> Result<PathBuf> {
+fn stub_name(generation: &Generation, public_key: &Path, boot_counters: usize) -> Result<PathBuf> {
     let bootspec = &generation.spec.bootspec.bootspec;
     let stub_inputs = [
         // Generation numbers can be reused if the latest generation was deleted.
@@ -374,15 +379,16 @@ fn stub_name(generation: &Generation, public_key: &Path) -> Result<PathBuf> {
     let stub_input_hash = Base32Unpadded::encode_string(&Sha256::digest(
         serde_json::to_string(&stub_inputs).unwrap(),
     ));
+    let count = if (boot_counters > 0) { format!("+{}", boot_counters) } else { "".to_string() };
     if let Some(specialisation_name) = &generation.specialisation_name {
         Ok(PathBuf::from(format!(
-            "nixos-generation-{}-specialisation-{}-{}.efi",
-            generation, specialisation_name, stub_input_hash
+            "nixos-generation-{}-specialisation-{}-{}{}.efi",
+            generation, specialisation_name, stub_input_hash, count
         )))
     } else {
         Ok(PathBuf::from(format!(
-            "nixos-generation-{}-{}.efi",
-            generation, stub_input_hash
+            "nixos-generation-{}-{}{}.efi",
+            generation, stub_input_hash, count
         )))
     }
 }
