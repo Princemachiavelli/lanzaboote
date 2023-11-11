@@ -36,6 +36,12 @@ in
       '';
     };
 
+    bootCounters = mkOption {
+      description = "Enable systemd-boot counters; 0 to disable.";
+      default = 0;
+      type = types.int;
+    };
+
     pkiBundle = mkOption {
       type = types.nullOr types.path;
       description = "PKI bundle containing db, PK, KEK";
@@ -138,6 +144,7 @@ in
           --public-key ${cfg.publicKeyFile} \
           --private-key ${cfg.privateKeyFile} \
           --configuration-limit ${toString configurationLimit} \
+          --boot-counters ${toString cfg.bootCounters} \
           ${config.boot.loader.efi.efiSysMountPoint} \
           /nix/var/nix/profiles/system-*-link
       '';
@@ -166,6 +173,15 @@ in
         ${pkgs.sbsigntool}/bin/sbsign --key '${cfg.privateKeyFile}' --cert '${cfg.publicKeyFile}' /run/fwupd-efi/fwupd*.efi
       '';
     };
+
+    systemd.additionalUpstreamSystemUnits = [
+      "boot-complete.target"
+      "systemd-bless-boot.service"
+    ];
+
+    boot.kernelParams = [
+      "panic=1"
+    ];
 
     services.fwupd.uefiCapsuleSettings = lib.mkIf config.services.fwupd.enable {
       DisableShimForSecureBoot = true;

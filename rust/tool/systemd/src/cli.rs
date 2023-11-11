@@ -59,6 +59,10 @@ struct InstallCommand {
 
     /// List of generation links (e.g. /nix/var/nix/profiles/system-*-link)
     generations: Vec<PathBuf>,
+
+    /// Enable and set number of boot counter tries.
+    #[arg(long, default_value_t = 0)]
+    boot_counters: usize,
 }
 
 impl Cli {
@@ -104,6 +108,7 @@ fn install(args: InstallCommand) -> Result<()> {
         args.configuration_limit,
         args.esp,
         args.generations,
+        args.boot_counters,
     )
     .install()
 }
